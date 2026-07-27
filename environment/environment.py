@@ -29,7 +29,7 @@ class QuadrotorEnv(gym.Env):
         if self.random_target:
             self.target_position = randomize_target(50, 2)
         else:
-            self.target_position = np.array([0, 0, 5], dtype=np.float32)
+            self.target_position = np.array([5, 5, 5], dtype=np.float32)
 
         target_body_id = mujoco.mj_name2id(
             self.model,
@@ -94,6 +94,7 @@ class QuadrotorEnv(gym.Env):
 
         mujoco.mj_forward(self.model, self.data)
         self.steps = 0
+        self.prev_distance = np.linalg.norm(self.target_position - self.data.qpos[:3])
 
         if self.render_mode == "human":
             self.render()
@@ -125,13 +126,18 @@ class QuadrotorEnv(gym.Env):
 
         distance = np.linalg.norm(self.target_position - pos)
 
-        # Reward function --------------------------------------
-        # Takeoff bonus (drone must take off)
-        is_airborne = pos[2] > 0.2
-        alive_bonus = 1.0 if is_airborne else 0.0
+        # Progress Reward (Dense)
+        # Rewards the agent for closing the gap, penalizes for moving away.
+        progress = self.prev_distance - distance
+        self.prev_distance = distance
 
-        reward = alive_bonus
-        reward += 2.0 * np.exp(-1.5 * distance)
+        # Scale progress so moving 1 meter yields ~10 points
+        reward = progress * 10.0
+
+        # Alive bonus
+        is_airborne = pos[2] > 0.2
+        alive_bonus = 0.1 if is_airborne else 0.0
+        reward += alive_bonus
 
         # Small stability penalties
         reward -= 0.05 * np.linalg.norm(vel)
@@ -140,11 +146,11 @@ class QuadrotorEnv(gym.Env):
 
         # Crash conditions (allows resting at ground height pos[2] ~ 0.05 without crashing):
         # - Flipping past 90 degrees (z_axis_z < 0.0)
-        # - Clipping below ground plane (z < 0.0) or flying out of vertical bounds (z > 5.0)
-        # - Drifting too far horizontally (|x| > 5.0 or |y| > 5.0)
+        # - Clipping below ground plane (z < 0.0) or flying out of vertical bounds (z > 80.0)
+        # - Drifting too far horizontally (|x| > 80.0 or |y| > 80.0)
         crashed = (
-            pos[2] < 0.0 or pos[2] > 5.0 or
-            abs(pos[0]) > 5.0 or abs(pos[1]) > 5.0 or
+            pos[2] < 0.0 or pos[2] > 80.0 or
+            abs(pos[0]) > 80.0 or abs(pos[1]) > 80.0 or
             z_axis_z < 0.0
         )
 
@@ -159,7 +165,8 @@ class QuadrotorEnv(gym.Env):
             reward = -100.0
             terminated = True
         elif target_reached:
-            reward += 100.0
+            time_bonus = (self.max_steps - self.steps) * alive_bonus
+            reward += 100.0 + time_bonus
             terminated = True
         elif self.steps >= self.max_steps:
             truncated = True
