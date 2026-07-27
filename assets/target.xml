@@ -1,0 +1,21 @@
+<mujoco model="Target">
+
+  <worldbody>
+    <body name="target" pos="1 0 0.5">
+      <geom
+          name="target_sphere"
+          type="sphere"
+          size="0.5"
+          rgba="0 1 0 1"
+          contype="0"
+          conaffinity="0"/>
+
+      <site
+          name="target_center"
+          pos="0 0 0"
+          size="0.02"
+          rgba="1 0 0 1"/>
+    </body>
+  </worldbody>
+
+</mujoco>
